@@ -1,31 +1,44 @@
 import React, { Component } from "react";
-import SimpleStorageContract from "./contracts/SimpleStorage.json";
+import myToken from "./contracts/DEWToken.json";
+import myTokenSale from "./contracts/DewTokenSale.json";
+import kycContract from "./contracts/KycContract.json";
 import getWeb3 from "./getWeb3";
 
 import "./App.css";
 
 class App extends Component {
-  state = { storageValue: 0, web3: null, accounts: null, contract: null };
+  state = { loaded:false, kycAddress: "0x123...", tokenSaleAddress: null, userTokens: 0 };
 
   componentDidMount = async () => {
     try {
       // Get network provider and web3 instance.
-      const web3 = await getWeb3();
+      this.web3 = await getWeb3();
 
       // Use web3 to get the user's accounts.
-      const accounts = await web3.eth.getAccounts();
+      this.accounts = await this.web3.eth.getAccounts();
 
       // Get the contract instance.
-      const networkId = await web3.eth.net.getId();
-      const deployedNetwork = SimpleStorageContract.networks[networkId];
-      const instance = new web3.eth.Contract(
-        SimpleStorageContract.abi,
-        deployedNetwork && deployedNetwork.address,
+      this.networkId = await this.web3.eth.net.getId();
+
+      this.tokenInstance = new this.web3.eth.Contract(
+        myToken.abi,
+        myToken.networks[this.networkId] && myToken.networks[this.networkId].address,
+      );
+
+      this.tokenSaleInstance = new this.web3.eth.Contract(
+        myTokenSale.abi,
+        myTokenSale.networks[this.networkId] && myTokenSale.networks[this.networkId].address,
+      );
+
+      this.kycContractInstance = new this.web3.eth.Contract(
+        kycContract.abi,
+        kycContract.networks[this.networkId] && kycContract.networks[this.networkId].address,
       );
 
       // Set web3, accounts, and contract to the state, and then proceed with an
       // example of interacting with the contract's methods.
-      this.setState({ web3, accounts, contract: instance }, this.runExample);
+      this.listenToTokenTransfer();
+      this.setState({loaded:true, tokenSaleAddress: myTokenSale.networks[this.networkId].address}, this.updateUserTokens);
     } catch (error) {
       // Catch any errors for any of the above operations.
       alert(
@@ -35,36 +48,49 @@ class App extends Component {
     }
   };
 
-  runExample = async () => {
-    const { accounts, contract } = this.state;
+  updateUserTokens = async () => {
+    let userTokens = await this.tokenInstance.methods.balanceOf(this.accounts[0]).call();
+    this.setState({userTokens: userTokens});
+  }
 
-    // Stores a given value, 5 by default.
-    await contract.methods.set(5).send({ from: accounts[0] });
+  listenToTokenTransfer = () => {
+    this.tokenInstance.events.Transfer({to: this.accounts[0]}).on("data", this.updateUserTokens);
+  }
 
-    // Get the value from the contract to prove it worked.
-    const response = await contract.methods.get().call();
+  handleBuyTokens = async() => {
+    await this.tokenSaleInstance.methods.buyTokens(this.accounts[0]).send({from: this.accounts[0], value: this.web3.utils.toWei("1", "Wei")});
+  }
 
-    // Update state with the result.
-    this.setState({ storageValue: response });
-  };
+  handleInputChange = (event) => {
+    const target = event.target;
+    const value = target.type === "checkbox" ? target.checked : target.value;
+    const name = target.name;
+    this.setState({
+      [name]: value
+    });
+  }
+
+  handleKycWhitelisting = async() => {
+    await this.kycContractInstance.methods.setKycCompleted(this.state.kycAddress).send({from: this.accounts[0]});
+    alert("KYC for " +this.state.kycAddress+ " is completed");
+
+  }
 
   render() {
-    if (!this.state.web3) {
-      return <div>Loading Web3, accounts, and contract...</div>;
+    if (!this.state.loaded) {
+      return <div>Loading Web3, accounts, and contract ... DEW CRYPTO </div>;
     }
     return (
       <div className="App">
-        <h1>Good to Go!</h1>
-        <p>Your Truffle Box is installed and ready.</p>
-        <h2>Smart Contract Example</h2>
-        <p>
-          If your contracts compiled and migrated successfully, below will show
-          a stored value of 5 (by default).
-        </p>
-        <p>
-          Try changing the value stored on <strong>line 40</strong> of App.js.
-        </p>
-        <div>The stored value is: {this.state.storageValue}</div>
+        <h1>DEW CRYPTO SALE</h1>
+        <p>Get your dew today!</p>
+        <h2>Kyc Whitelisting</h2>
+        Address to allow: <input type="text" name="kycAddress" value={this.state.kycAddress} onChange={this.handleInputChange} />
+        <button type="button" onClick={this.handleKycWhitelisting}>Add to Whitelist</button>
+        <h2>Buy tokens</h2>
+        <p>If you want to buy tokens, send Wei to this address: {this.state.tokenSaleAddress} </p>
+        <p>You currently have: {this.state.userTokens} DEW tokens</p>
+        <button type = "button" onClick={this.handleBuyTokens}>Buy more tokens</button>
       </div>
     );
   }
